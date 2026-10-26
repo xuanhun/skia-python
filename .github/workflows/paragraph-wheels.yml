@@ -1,0 +1,93 @@
+name: Paragraph metrics wheels
+
+on:
+  push:
+    branches: [build/paragraphmetrics-wheels]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'xuanhun/skia-python'
+    name: CPython 3.13 / ${{ matrix.os }} / x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      # Keep the upstream Skia build scripts and cibuildwheel machinery. This
+      # fork-only matrix builds just the first two supported deployment targets.
+      - name: Build and test installed wheel
+        uses: pypa/cibuildwheel@v4.3.1
+        env:
+          CIBW_BUILD: cp313-*
+          CIBW_SKIP: '*musllinux*'
+          CIBW_ARCHS: auto64
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_BEFORE_ALL: bash scripts/build_${{ runner.os }}.sh
+          CIBW_BEFORE_BUILD: pip install pybind11==3.1.0 numpy==2.5.4
+          CIBW_TEST_REQUIRES: pytest==9.1.1
+          CIBW_TEST_COMMAND: >-
+            python -m pytest -q
+            {project}/tests/test_paragraph_metrics.py
+            {project}/tests/test_paragraph.py
+            -k "not registerTypeface"
+            --junitxml={project}/paragraph-wheel-tests.xml
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: auditwheel repair --exclude libEGL.so.1 -w {dest_dir} {wheel}
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ''
+
+      - name: Record source and wheel fingerprints
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import pathlib
+          import platform
+          import subprocess
+
+          def fingerprint(path):
+              """Fingerprint one build input or output without changing it."""
+              return {"path": path.as_posix(), "bytes": path.stat().st_size,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+          inputs = [pathlib.Path(name) for name in (
+              "setup.py", "src/skia/Paragraph.cpp", "tests/test_paragraph_metrics.py",
+              ".github/workflows/paragraph-wheels.yml")]
+          inputs += sorted(pathlib.Path("scripts").glob("build_*.sh"))
+          inputs += sorted(pathlib.Path("patch").glob("*"))
+          manifest = {
+              "version": "144.1+paragraphmetrics.1",
+              "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "skiaCommit": subprocess.check_output(["git", "-C", "skia", "rev-parse", "HEAD"], text=True).strip(),
+              "buildHost": platform.platform(),
+              "inputs": [fingerprint(path) for path in inputs if path.is_file()],
+              "wheels": [fingerprint(path) for path in sorted(pathlib.Path("wheelhouse").glob("*.whl"))],
+              "limitations": ["No project P1/P3 or Office/cross-platform pixel-equivalence claim.",
+                              "libEGL is an explicitly external Linux dependency."]}
+          assert manifest["wheels"], "No tested wheel produced"
+          pathlib.Path("wheel-provenance.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+      - name: Upload tested wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: paragraphmetrics-cp313-${{ runner.os }}-x64
+          path: |
+            wheelhouse/*.whl
+            wheel-provenance.json
+          if-no-files-found: error
+
+      - name: Preserve test results even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: paragraphmetrics-tests-${{ runner.os }}-x64
+          path: paragraph-wheel-tests.xml
+          if-no-files-found: warn
