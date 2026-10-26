@@ -43,6 +43,14 @@ jobs:
             --junitxml={project}/paragraph-wheel-tests.xml
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: auditwheel repair --exclude libEGL.so.1 -w {dest_dir} {wheel}
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ''
+          # Linux builds/tests run in a container. /host is cibuildwheel's
+          # documented host mount, so the runner can retain this JUnit file.
+          CIBW_TEST_COMMAND_LINUX: >-
+            python -m pytest -q
+            {project}/tests/test_paragraph_metrics.py
+            {project}/tests/test_paragraph.py
+            -k "not registerTypeface"
+            --junitxml=/host${{ github.workspace }}/paragraph-wheel-tests.xml
 
       - name: Record source and wheel fingerprints
         shell: python
@@ -64,7 +72,7 @@ jobs:
           inputs += sorted(pathlib.Path("scripts").glob("build_*.sh"))
           inputs += sorted(pathlib.Path("patch").glob("*"))
           manifest = {
-              "version": "144.1+paragraphmetrics.1",
+              "version": "144.1+paragraphmetrics.2",
               "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               "skiaCommit": subprocess.check_output(["git", "-C", "skia", "rev-parse", "HEAD"], text=True).strip(),
               "buildHost": platform.platform(),
@@ -91,3 +99,4 @@ jobs:
           name: paragraphmetrics-tests-${{ runner.os }}-x64
           path: paragraph-wheel-tests.xml
           if-no-files-found: warn
+

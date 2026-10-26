@@ -12,7 +12,7 @@ except ImportError:
     pass
 
 NAME = 'skia-python'
-__version__ = '144.1+paragraphmetrics.1'
+__version__ = '144.1+paragraphmetrics.2'
 
 SKIA_PATH = os.getenv('SKIA_PATH', 'skia')
 SKIA_OUT_PATH = os.getenv(
@@ -203,3 +203,4 @@ setup(
     ],
     zip_safe=False,
 )
+
