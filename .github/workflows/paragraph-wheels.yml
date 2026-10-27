@@ -72,7 +72,7 @@ jobs:
           inputs += sorted(pathlib.Path("scripts").glob("build_*.sh"))
           inputs += sorted(pathlib.Path("patch").glob("*"))
           manifest = {
-              "version": "144.1+paragraphmetrics.2",
+              "version": "144.1+paragraphmetrics.3",
               "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               "skiaCommit": subprocess.check_output(["git", "-C", "skia", "rev-parse", "HEAD"], text=True).strip(),
               "buildHost": platform.platform(),
