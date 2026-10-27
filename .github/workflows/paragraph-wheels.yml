@@ -39,6 +39,7 @@ jobs:
             python -m pytest -q
             {project}/tests/test_paragraph_metrics.py
             {project}/tests/test_surface_props_text.py
+            {project}/tests/test_font_collection_selection.py
             {project}/tests/test_paragraph.py
             -k "not registerTypeface"
             --junitxml={project}/paragraph-wheel-tests.xml
@@ -50,6 +51,7 @@ jobs:
             python -m pytest -q
             {project}/tests/test_paragraph_metrics.py
             {project}/tests/test_surface_props_text.py
+            {project}/tests/test_font_collection_selection.py
             {project}/tests/test_paragraph.py
             -k "not registerTypeface"
             --junitxml=/host${{ github.workspace }}/paragraph-wheel-tests.xml
@@ -69,12 +71,13 @@ jobs:
                       "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
           inputs = [pathlib.Path(name) for name in (
-              "setup.py", "src/skia/Paragraph.cpp", "tests/test_paragraph_metrics.py",
+              "setup.py", "src/skia/Paragraph.cpp", "src/skia/Surface.cpp", "src/skia/Font.cpp",
+              "tests/test_paragraph_metrics.py", "tests/test_surface_props_text.py", "tests/test_font_collection_selection.py",
               ".github/workflows/paragraph-wheels.yml")]
           inputs += sorted(pathlib.Path("scripts").glob("build_*.sh"))
           inputs += sorted(pathlib.Path("patch").glob("*"))
           manifest = {
-              "version": "144.1+paragraphmetrics.3",
+              "version": "144.1+paragraphmetrics.4",
               "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               "skiaCommit": subprocess.check_output(["git", "-C", "skia", "rev-parse", "HEAD"], text=True).strip(),
               "buildHost": platform.platform(),
@@ -101,4 +104,3 @@ jobs:
           name: paragraphmetrics-tests-${{ runner.os }}-x64
           path: paragraph-wheel-tests.xml
           if-no-files-found: warn
-
