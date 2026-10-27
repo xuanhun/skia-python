@@ -1,0 +1,95 @@
+name: Publish verified paragraph metrics prerelease
+
+on:
+  push:
+    branches: [publish/paragraphmetrics-144.1.4]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'xuanhun/skia-python'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          repository: xuanhun/skia-python
+          run-id: 40439855873
+          github-token: ${{ github.token }}
+          pattern: paragraphmetrics-cp313-*-x64
+          path: artifacts
+
+      - name: Verify exact previously tested wheels and prepare release files
+        shell: python
+        run: |
+          import hashlib
+          import json
+          from pathlib import Path
+          import shutil
+
+          expected = {
+              "Windows": ("win_amd64", "68e5dbaae92441d7d0a4ae90515fdb79b50b3ec53cc8867ee1fea603424b9824"),
+              "Linux": ("manylinux_2_28_x86_64", "ee9e1d0f1eaef68bfb0ab3f15c9236ab18f88a518c98b4290360f91fc45b9844"),
+          }
+          source = "3d4b4b6a20e057a337d46ab4cdf624e3fd78973e"
+          skia = "2708a1b1540e59b8e3407405b0c991a5c7b69523"
+          dist = Path("dist")
+          dist.mkdir()
+          wheels = []
+          for os_name, (tag, expected_sha) in expected.items():
+              root = Path("artifacts") / f"paragraphmetrics-cp313-{os_name}-x64"
+              provenance = json.loads((root / "wheel-provenance.json").read_text(encoding="utf-8"))
+              assert provenance["sourceCommit"] == source
+              assert provenance["skiaCommit"] == skia
+              name = f"skia_python-144.1+paragraphmetrics.4-cp313-cp313-{tag}.whl"
+              wheel = root / "wheelhouse" / name
+              sha = hashlib.sha256(wheel.read_bytes()).hexdigest()
+              assert sha == expected_sha, f"Unexpected wheel digest: {name}"
+              assert len(provenance["wheels"]) == 1
+              assert provenance["wheels"][0]["sha256"] == sha
+              shutil.copy2(wheel, dist / name)
+              shutil.copy2(root / "wheel-provenance.json", dist / f"wheel-provenance-{os_name.lower()}-x64.json")
+              wheels.append({"fileName": name, "sha256": sha, "bytes": wheel.stat().st_size})
+          manifest = {
+              "version": "144.1+paragraphmetrics.4", "sourceCommit": source, "skiaCommit": skia,
+              "buildRun": "https://github.com/xuanhun/skia-python/actions/runs/40439855873",
+              "upstreamPullRequest": "https://github.com/skia-python/skia-python/pull/394",
+              "wheels": wheels,
+              "validation": "Each target: 61 native tests passed, 2 deselected in CI and local installed-wheel rerun; 91 affected project regression tests passed per target in isolated candidate-source runs; production integration is validated separately.",
+              "limitations": ["Temporary fork prerelease; CPython 3.13 x64 only.",
+                              "No complete P1/P3, original JS raster or Office/WPS equivalence claim.",
+                              "Linux requires host fontconfig/OpenGL/libEGL and appropriate fonts."]}
+          (dist / "release-provenance.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          fingerprints = [f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}" for path in sorted(dist.iterdir())]
+          (dist / "SHA256SUMS").write_text("\n".join(fingerprints) + "\n", encoding="utf-8")
+          notes = """Temporary fork prerelease exposing existing native SkParagraph inspection and FontCollection selection bindings.
+
+          - Upstream Draft PR: https://github.com/skia-python/skia-python/pull/394
+          - Exact build source: 3d4b4b6a20e057a337d46ab4cdf624e3fd78973e
+          - Build: https://github.com/xuanhun/skia-python/actions/runs/40439855873
+          - Supported artifacts: CPython 3.13, Windows x64 and Linux glibc x86_64.
+          - Each target passed 61 native binding/paragraph/surface tests (2 explicitly deselected) in CI and an installed-wheel local rerun; 91 affected project regression tests also passed per target in isolated candidate-source runs; production integration will be validated separately.
+          - Adds native FontCollection.findTypefaces/setDynamicFontManager/clearCaches and FontMgr.legacyMakeTypeface(None, style) bindings. Six new native tests cover family order, default behavior, cache refresh and dynamic manager lifetime.
+          - Source/final font PNGs, including embedded variable font aliases, were compared within each OS. Different OS fonts are not claimed pixel-equivalent.
+          - Unchanged-default public skia-canvas 3.0.8 comparison: variable/default selection (10 cases) and generics (16 cases) have zero metric/pixel differences on each target. Literal controls (13 cases) also have zero metric differences; Linux has zero pixel differences, Windows retains 438 differing color-emoji pixels from the preceding release. No tolerance or compensation was applied.
+          - The Python host restores actual native font hinting=None and source SurfaceProps contrast=0/gamma=1.4/sRGB; Skia engine algorithms are unchanged.
+
+          No Skia shaping/layout/painting algorithms were changed. This does not certify a complete PPT workflow or Office/WPS compatibility. No PyPI publication is performed. See SHA256SUMS and provenance JSONs for verification.
+          """
+          Path("release-notes.md").write_text(notes, encoding="utf-8")
+
+      - name: Publish prerelease with tested assets only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create 'v144.1+paragraphmetrics.4' dist/*
+          --repo xuanhun/skia-python
+          --target 3d4b4b6a20e057a337d46ab4cdf624e3fd78973e
+          --title 'skia-python 144.1+paragraphmetrics.4 (temporary fork)'
+          --notes-file release-notes.md
+          --prerelease --latest=false
